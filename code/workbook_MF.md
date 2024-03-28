@@ -940,3 +940,652 @@ ggplot(data_mtDNA, aes(NUM, PROPORTION_COVERAGE), group = ID, col = CHR) +
 ggsave("mtDNA_prop_coverage_allsamples.png", height=11.25, width=15)
 ## the window sizes are just too large to plot the mitochondrial and Wolbachia coverage. 
 ```
+
+
+# Try re-mapping to a different dog reference genome that contains a specified mitochondrial genome
+
+## Download Genome assembly Dog10K_Boxer_Tasha
+
+```bash
+cd /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/dog2
+
+wget https://ftp.ncbi.nlm.nih.gov/genomes/genbank/vertebrate_mammalian/Canis_lupus/latest_assembly_versions/GCA_000002285.4_Dog10K_Boxer_Tasha/GCA_000002285.4_Dog10K_Boxer_Tasha_genomic.fna.gz
+
+# unzip the reference sequence beforehand
+gunzip GCA_000002285.4_Dog10K_Boxer_Tasha_genomic.fna.gz
+
+# Combine the 2 references
+cat /project/RDS-FSC-Heartworm_MLR-RW/HW_WGS_ALL/batch1/analysis/mapping/dimmitis_WSI_2.2.fa GCA_000002285.4_Dog10K_Boxer_Tasha_genomic.fna > reference_di_wol_dog2.fa 
+```
+
+```bash
+#!/bin/bash
+
+# PBS directives 
+#PBS -P RDS-FSC-Heartworm_MLR-RW
+#PBS -N dog2_index
+#PBS -l select=1:ncpus=8:mem=20GB
+#PBS -l walltime=01:00:00
+#PBS -m abe
+#PBS -q defaultQ
+#PBS -o dog2_index.txt
+
+# qsub ../dog2_index.sh
+
+# Load modules
+module load samtools/1.17
+
+cd /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/dog2
+
+# index reference sequence
+bwa index reference_di_wol_dog2.fa
+```
+
+
+
+### Map trimmed reads to combined D. immitis & Wol & dog genome
+
+
+```bash
+#!/bin/bash
+
+# PBS directives 
+#PBS -P RDS-FSC-Heartworm_MLR-RW
+#PBS -N dog2_mapping
+#PBS -l select=1:ncpus=16:mem=50GB
+#PBS -l walltime=02:00:00
+#PBS -m abe
+#PBS -q defaultQ
+#PBS -o dog2_mapping.txt
+#PBS -J 1-9
+
+# qsub ../dog2_mapping.pbs
+
+config=/scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/info.txt
+sample=$(awk -v taskID=$PBS_ARRAY_INDEX '$1==taskID {print $2}' $config) 
+NCPU=16
+
+# Set working directory
+cd /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/dog2/mapping
+
+# Load modules
+module load bwa/0.7.17
+
+# map the reads, with a separate mapping job for each sample
+bwa mem \
+-R '@RG\tID:${SAMPLE_NAME}\tSM:${SAMPLE_NAME}\tPL:illumina' \
+/scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/dog2/reference_di_wol_dog2.fa \
+-t $NCPUS \
+../../trimmomatic/${sample}_1_trimpaired.fq.gz \
+../../trimmomatic/${sample}_2_trimpaired.fq.gz \
+> ./${sample}.tmp.sam
+
+# Set the num_threads param to directly scale with the number of cpus using the PBS environment variable "${NCPUS}).
+```
+
+Convert to bam & sort the mapped reads:
+
+```bash
+#!/bin/bash
+
+# PBS directives 
+#PBS -P RDS-FSC-Heartworm_MLR-RW
+#PBS -N dog2_mapping_sort
+#PBS -l select=1:ncpus=1:mem=100GB
+#PBS -l walltime=05:00:00
+#PBS -m e
+#PBS -q defaultQ
+#PBS -o dog2_mapping_sort.txt
+#PBS -J 1-9
+
+# qsub ../dog2_mapping_sort.pbs
+
+config=/scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/info.txt
+sample=$(awk -v taskID=$PBS_ARRAY_INDEX '$1==taskID {print $2}' $config) 
+NCPU=1
+
+echo "sample is: $sample"
+
+# Set working directory
+cd /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/dog2/mapping
+
+# Load modules
+module load samtools/1.17
+
+# Mapping stats
+samtools flagstat ${sample}.tmp.sam > flagstat1/${sample}_flagstat1.txt
+	
+# convert the sam to bam format
+samtools view -q 15 -b -o ${sample}.tmp.bam ${sample}.tmp.sam
+
+# sort the mapped reads in the bam file
+samtools sort ${sample}.tmp.bam -o ${sample}.sorted.bam
+ 
+# index the sorted bam
+samtools index ${sample}.sorted.bam
+
+# Mapping stats after filtering
+samtools flagstat ${sample}.sorted.bam > flagstat2/${sample}_flagstat2.txt
+```
+
+
+Combine flagstat files for all samples so it's easier to read.
+
+```bash
+#!/bin/bash
+
+# PBS directives 
+#PBS -P RDS-FSC-Heartworm_MLR-RW
+#PBS -N multiqc_flagstat1
+#PBS -l select=1:ncpus=1:mem=1GB
+#PBS -l walltime=00:10:00
+#PBS -m e
+#PBS -q defaultQ
+#PBS -o multiqc_flagstat1.txt
+
+# Submit job
+# qsub ../multiqc_flagstat1.sh
+
+cd /project/RDS-FSC-Heartworm_MLR-RW/MultiQC
+
+# Load modules
+module load git/2.25.0
+module load python/3.9.15
+
+multiqc /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/flagstat1/*_flagstat1.txt -o /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/flagstat1
+```
+
+```bash
+#!/bin/bash
+
+# PBS directives 
+#PBS -P RDS-FSC-Heartworm_MLR-RW
+#PBS -N multiqc_flagstat2
+#PBS -l select=1:ncpus=1:mem=1GB
+#PBS -l walltime=00:10:00
+#PBS -m e
+#PBS -q defaultQ
+#PBS -o multiqc_flagstat2.txt
+
+# Submit job
+# qsub ../multiqc_flagstat2.sh
+
+cd /project/RDS-FSC-Heartworm_MLR-RW/MultiQC
+
+# Load modules
+module load git/2.25.0
+module load python/3.9.15
+
+multiqc /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/flagstat2/*_flagstat2.txt -o /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/flagstat2
+```
+
+
+
+## Extract reads that mapped to the *D. immitis* genome
+
+If I mapped to the *D. immitis* and dog genomes separately, there could be reads that mapped to both genomes. To avoid this, I mapped to the combined D. immitis/dog genome. I can now extract the reads that mapped to only the *D. immitis* genome and use this for downstream analyses.
+
+### D. immitis without Wolbachia:
+
+```bash
+#!/bin/bash
+
+# PBS directives 
+#PBS -P RDS-FSC-Heartworm_MLR-RW
+#PBS -N mapping_extract_di
+#PBS -l select=1:ncpus=1:mem=20GB
+#PBS -l walltime=06:00:00
+#PBS -m e
+#PBS -q defaultQ
+#PBS -o mapping_extract_di.txt
+#PBS -J 1-9
+
+# qsub ../mapping_extract_di.pbs
+
+# Set working directory
+cd /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping
+
+# Load modules
+module load samtools/1.17
+
+config=/scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/info.txt
+sample=$(awk -v taskID=$PBS_ARRAY_INDEX '$1==taskID {print $2}' $config) 
+NCPU=1
+
+# Extract reads that only mapped to D. immitis.
+samtools view -b -h -L /project/RDS-FSC-Heartworm_MLR-RW/HW_WGS_ALL/batch1/analysis/mapping/dimmitis_WSI_2.2_noWb.bed /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/${sample}.sorted.bam > /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/${sample}_extract_di.bam
+# Should still be in sorted form
+# -b flag makes sure the output is bam
+# -h flag includes the header in SAM output
+
+samtools view /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/${sample}_extract_di.bam | head
+
+# I do not have to sort the bam file again, it should still be sorted.
+
+## QC
+# How many D. immitis reads were extracted?
+
+samtools flagstat /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/${sample}_extract_di.bam > /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/extract_di_flagstat/${sample}_extract_di_flagstat.txt
+```
+
+
+### Wolbachia
+
+```bash
+#!/bin/bash
+
+# PBS directives 
+#PBS -P RDS-FSC-Heartworm_MLR-RW
+#PBS -N mapping_extract_Wb
+#PBS -l select=1:ncpus=1:mem=20GB
+#PBS -l walltime=06:00:00
+#PBS -m e
+#PBS -q defaultQ
+#PBS -o mapping_extract_Wb.txt
+#PBS -J 1-9
+
+# qsub ../mapping_extract_Wb.pbs
+
+# Set working directory
+cd /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping
+
+# Load modules
+module load samtools/1.17
+
+config=/scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/info.txt
+sample=$(awk -v taskID=$PBS_ARRAY_INDEX '$1==taskID {print $2}' $config) 
+NCPU=1
+
+# Extract reads that only mapped to Wolbachia
+samtools view -b -h -L /project/RDS-FSC-Heartworm_MLR-RW/HW_WGS_ALL/batch1/analysis/mapping/dimmitis_WSI_2.2_Wb.bed /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/${sample}.sorted.bam > /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/${sample}_extract_Wb.bam
+# Should still be in sorted form
+# -b flag makes sure the output is bam
+# -h flag includes the header in SAM output
+
+samtools view /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/${sample}_extract_Wb.bam | head
+
+# I do not have to sort the bam file again, it should still be sorted.
+
+## QC
+# How many D. immitis reads were extracted?
+
+samtools flagstat /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/${sample}_extract_Wb.bam > /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/extract_Wb_flagstat/${sample}_extract_Wb_flagstat.txt
+```
+
+
+### Dog
+
+I can now extract the reads that mapped to only the dog genome to see how much contamination there is.
+
+Get bed file for dog genome:
+
+```bash
+#!/bin/bash
+
+# PBS directives 
+#PBS -P RDS-FSC-Heartworm_MLR-RW
+#PBS -N mapping_bed_dog
+#PBS -l select=1:ncpus=1:mem=10GB
+#PBS -l walltime=01:00:30
+#PBS -m e
+#PBS -q defaultQ
+#PBS -o mapping_bed_dog.txt
+
+# qsub ../mapping_bed_dog.sh
+
+# Set working directory
+cd /project/RDS-FSC-Heartworm_MLR-RW/HW_WGS_ALL/batch1/analysis/mapping
+
+# Load modules
+module load samtools/1.17
+
+# Index the reference file (from Steve's paper) using samtools faidx
+samtools faidx /project/RDS-FSC-Heartworm_MLR-RW/HW_WGS_ALL/batch1/reference/GCA_014441545.1_ROS_Cfam_1.0_genomic.fna
+
+# Get the scaffolds/positions.
+head /project/RDS-FSC-Heartworm_MLR-RW/HW_WGS_ALL/batch1/reference/GCA_014441545.1_ROS_Cfam_1.0_genomic.fna
+# Column 1 is the chromosome/scaffold, column 2 is how long it is, then there's some other info.
+
+# Get chromosome, then start and end positions
+awk '{print $1, "1", $2}' OFS="\t" /project/RDS-FSC-Heartworm_MLR-RW/HW_WGS_ALL/batch1/reference/GCA_014441545.1_ROS_Cfam_1.0_genomic.fna.fai | head
+
+# Save this info as a bed file
+awk '{print $1, "1", $2}' OFS="\t" /project/RDS-FSC-Heartworm_MLR-RW/HW_WGS_ALL/batch1/reference/GCA_014441545.1_ROS_Cfam_1.0_genomic.fna.fai > /project/RDS-FSC-Heartworm_MLR-RW/HW_WGS_ALL/batch1/reference/GCA_014441545.1_ROS_Cfam_1.0_genomic.bed
+# Now we have a nice bed file that has info telling us where things are
+```
+
+Now extract dog reads:
+
+```bash
+#!/bin/bash
+
+# PBS directives 
+#PBS -P RDS-FSC-Heartworm_MLR-RW
+#PBS -N mapping_extract_dog
+#PBS -l select=1:ncpus=1:mem=20GB
+#PBS -l walltime=06:00:00
+#PBS -m e
+#PBS -q defaultQ
+#PBS -o mapping_extract_dog.txt
+#PBS -J 1-9
+
+# qsub ../mapping_extract_dog.pbs
+
+# Set working directory
+cd /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping
+
+# Load modules
+module load samtools/1.17
+
+config=/scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/info.txt
+sample=$(awk -v taskID=$PBS_ARRAY_INDEX '$1==taskID {print $2}' $config) 
+NCPU=1
+
+# Extract reads that only mapped to D. immitis.
+samtools view -b -h -L /project/RDS-FSC-Heartworm_MLR-RW/HW_WGS_ALL/batch1/analysis/mapping/GCA_014441545.1_ROS_Cfam_1.0_genomic.bed /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/${sample}.sorted.bam > /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/${sample}_extract_dog.bam
+# Should still be in sorted form
+# -b flag makes sure the output is bam
+# -h flag includes the header in SAM output
+
+samtools view /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/${sample}_extract_dog.bam | head
+
+# I do not have to sort the bam file again, it should still be sorted.
+
+## QC
+# How many D. immitis reads were extracted?
+
+samtools flagstat /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/${sample}_extract_dog.bam > /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/extract_dog_flagstat/${sample}_extract_dog_flagstat.txt
+```
+
+Combine flagstat files for all samples so it's easier to read.
+
+```bash
+#!/bin/bash
+
+# PBS directives 
+#PBS -P RDS-FSC-Heartworm_MLR-RW
+#PBS -N multiqc_extract_flagstat
+#PBS -l select=1:ncpus=1:mem=1GB
+#PBS -l walltime=00:30:00
+#PBS -m e
+#PBS -q defaultQ
+#PBS -o multiqc_extract_flagstat.txt
+
+# Submit job
+# qsub ../multiqc_extract_flagstat.sh
+
+cd /project/RDS-FSC-Heartworm_MLR-RW/MultiQC
+
+# Load modules
+module load git/2.25.0
+module load python/3.9.15
+
+multiqc /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/extract_di_flagstat/*_extract_di_flagstat.txt -o /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/extract_di_flagstat
+
+multiqc /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/extract_Wb_flagstat/*_extract_Wb_flagstat.txt -o /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/extract_Wb_flagstat
+
+multiqc /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/extract_dog_flagstat/*_extract_dog_flagstat.txt -o /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/extract_dog_flagstat
+```
+
+
+## Coverage
+
+Adopted the code from Javier's paper - acknowledge this in methods.
+
+```bash
+#!/bin/bash
+
+# PBS directives 
+#PBS -P RDS-FSC-Heartworm_MLR-RW
+#PBS -N coverage
+#PBS -l select=3:ncpus=1:mem=50GB
+#PBS -l walltime=24:00:00
+#PBS -m abe
+#PBS -q defaultQ
+#PBS -o coverage.txt
+
+# qsub ../coverage.sh
+
+WORKING_DIR=/scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping
+cd ${WORKING_DIR}
+
+WINDOW='100000'
+
+module load bamtools/2.5.1
+module load bedtools/2.31.0
+module load samtools/1.17
+
+for i in /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/*sorted.bam; do
+
+bamtools header -in ${i} | grep "^@SQ" | awk -F'[:\t]' '{printf $3"\t"1"\t"$5"\n"}' OFS="\t" > ${i%.bam}.chr.bed
+bamtools header -in ${i} | grep "^@SQ" | awk -F'[:\t]' '{printf $3"\t"$5"\n"}' OFS="\t" > ${i%.bam}.chr.genome
+
+bedtools makewindows -g ${i%.bam}.chr.genome -w ${WINDOW} > ${i%.bam}.${WINDOW}_window.bed
+
+samtools bedcov -Q 20 ${i%.bam}.chr.bed ${i} | awk -F'\t' '{printf $1"\t"$2"\t"$3"\t"$4"\t"$4/($3-$2)"\n"}' OFS="\t" > ${i%.bam}.chr.cov
+samtools bedcov -Q 20 ${i%.bam}.${WINDOW}_window.bed ${i} | awk -F'\t' '{printf $1"\t"$2"\t"$3"\t"$4"\t"$4/($3-$2)"\n"}' OFS="\t" > ${i%.bam}.${WINDOW}_window.cov
+
+rm ${i%.bam}.chr.bed ${i%.bam}.${WINDOW}_window.bed ${i%.bam}.chr.genome;
+
+done
+
+for i in *.chr.cov; do 
+
+printf "${i}\n" > ${i}.tmp | awk '{print $5}' OFS="\t" ${i} >> ${i}.tmp;
+
+done
+
+paste *.tmp > coverage_stats.summary
+```
+```bash
+# moved all relevant coverage files into coverage folder
+cd /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/coverage
+# remove temporary files
+rm *.tmp
+```
+
+
+### Generate quantitative stats on coverage for supplementary tables etc
+Extract mtDNA, Wb and nuclear (mean & stddev) data
+
+For nuclear, we will select only the defined Chr (chrX and chr1 to chr4)
+
+```bash
+#!/bin/bash
+
+# PBS directives 
+#PBS -P RDS-FSC-Heartworm_MLR-RW
+#PBS -N coverage_stats
+#PBS -l select=1:ncpus=1:mem=4GB
+#PBS -l walltime=00:10:00
+#PBS -m e
+#PBS -q defaultQ
+#PBS -o coverage_stats.txt
+
+# qsub ../coverage_stats.sh
+
+cd /scratch/RDS-FSC-Heartworm_MLR-RW/MF/analysis/mapping/coverage
+# Load modules
+module load datamash/1.7
+
+# extract mtDNA and nuclear (mean & stddev) data
+for i in *sorted.chr.cov; do
+	name=${i%.sorted.chr.cov};
+	nuc=$(grep -v "scaffold\|Wb\|Mt\|CM025\|JAA" ${i%.sorted.chr.cov}.sorted.100000_window.cov | datamash mean 5 sstdev 5 );
+	mtDNA=$(grep "chrMtDNA" ${i} | cut -f5 );
+	Wb=$(grep 'chrWb' ${i} | cut -f5 ); 
+	echo -e "${name}\t${nuc}\t${mtDNA}\t${Wb}";
+done > 'mito_wolb_cov.stats'
+```
+Transferred all the relevant files into the R_analysis folder on my computer for further analysis in R. Now we'll generate some plots and stats.
+
+Coverage in R:
+
+```R
+# HW WGS Coverage
+
+# load libraries
+library(tidyverse)
+library(ggpubr)
+library(ggsci)
+library(stringr)
+
+setwd("C:/Users/rpow2134/OneDrive - The University of Sydney (Staff)/Documents/HW_WGS/HW_WGS_1/Artemis/coverage")
+
+#first, I have to read the nuclear cov stat and estimate the mean and sd
+#then, to add it to 'mito_wolb_cov.stats
+
+nuc_mito_wb_cov <- read.table('mito_wolb_cov.stats', header = F) %>% as_tibble()
+
+colnames(nuc_mito_wb_cov) <- c('ID', 'nuc_cov', 'sd_nuc_cov', 'mito_cov', 'wb_cov')
+
+write_csv(nuc_mito_wb_cov, 'nuc_mit_wb_cov.csv')
+
+# nuclear, mitochondrial and Wb DNA coverage ratio
+
+n_m <- ggplot(nuc_mito_wb_cov, aes(x=ID, y=mito_cov/nuc_cov)) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title = "Nuc. to mito. genome coverage ratio", y = "Coverage Ratio")
+n_m
+
+n_wb <- ggplot(nuc_mito_wb_cov, aes(x=ID, y=wb_cov/nuc_cov)) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title = "Nuc. to Wolb. genome coverage ratio", y = "Coverage Ratio")
+n_wb
+
+m_wb <- ggplot(nuc_mito_wb_cov, aes(x=ID, y=mito_cov/wb_cov)) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title = "Mito. to Wolb. genome coverage ratio", y = "Coverage Ratio")
+m_wb
+
+ggarrange(n_m, n_wb, m_wb, ncol = 3)
+ggsave("cov_ratios.png", height=6, width=20)
+
+
+# list file names
+file_names.window <- list.files(path = "C:/Users/rpow2134/OneDrive - The University of Sydney (Staff)/Documents/HW_WGS/HW_WGS_1/Artemis/coverage",pattern = ".sorted.100000_window.cov")
+
+# load data using file names, and make a formatted data frame
+setwd("C:/Users/rpow2134/OneDrive - The University of Sydney (Staff)/Documents/HW_WGS/HW_WGS_1/Artemis/coverage")
+
+data <- purrr::map_df(file_names.window, function(x) {
+  data <- read.delim(x, header = F, sep="\t")
+  data$V1 <- str_replace(data$V1, 'dirofilaria_immitis_', '')
+  data <- tibble::rowid_to_column(data, "NUM")
+  cbind(sample_name = gsub(".sorted.100000_window.cov","",x), data)
+})
+colnames(data) <- c("ID", "NUM", "CHR", "START", "END", 
+                    "RAW_COVERAGE", "PROPORTION_COVERAGE")
+
+
+
+# D. immitis coverage
+
+# remove scaffolds, mitochondrial and wolbachia genome
+data_nuc <- dplyr::filter(data, !grepl("scaffold|MtDNA|Wb|JAAUVH|CM025",CHR))
+# Also remove chromosomes called JAAUVH010000344 and CM025130.1 etc. - they are part of the dog genome. Removing them here is totally fine.
+
+# data$SEX <- str_detect(data$SCAF,"Trichuris_trichiura_1_")
+
+
+# plot the general cov for each sample
+ggplot(data_nuc, aes(NUM, PROPORTION_COVERAGE/(median(PROPORTION_COVERAGE)), group = ID, col = CHR)) +
+  geom_point(size=0.5) +
+  labs( x = "Genome position" , y = "Relative coverage per 100kb window") +
+  theme_bw() + theme(strip.text.x = element_text(size = 6)) +
+  facet_wrap(~ID, scales = "free_y")
+
+ggsave("ALL_genomewide_prop_median_coverage_allsamples.png", height=11.25, width=15)
+
+
+# this shows the proportion of coverage relative to the median coverage of all samples. Let's also just look at the proportion coverage by itself (not in relation to anything else).
+ggplot(data_nuc, aes(NUM, PROPORTION_COVERAGE, group = ID, col = CHR)) +
+  geom_point(size=0.5) +
+  labs( x = "Genome position" , y = "Raw coverage per 100kb window") +
+  theme_bw() + theme(strip.text.x = element_text(size = 6)) +
+  facet_wrap(~ID, scales = "free_y")
+
+
+# include line for the mean
+mean_coverage_per_sample <- aggregate(PROPORTION_COVERAGE ~ ID, data = data_nuc, FUN = mean)
+
+data_nuc <- merge(data_nuc, mean_coverage_per_sample, by = "ID", suffixes = c("", "_mean"))
+
+ggplot(data_nuc, aes(NUM, PROPORTION_COVERAGE, group = ID, col = CHR)) +
+  geom_point(size=0.5) +
+  geom_hline(aes(yintercept = PROPORTION_COVERAGE_mean), linetype = "dashed", color = "black") +
+  labs( x = "Genome position" , y = "Raw coverage per 100kb window") +
+  theme_bw() + theme(strip.text.x = element_text(size = 6)) +
+  facet_wrap(~ID, scales = "free_y")
+
+ggsave("ALL_genomewide_prop_coverage_allsamples.png", height=11.25, width=15)
+
+
+
+
+
+# Let's see only the chrX to explore the sex of the sample
+#Plotting with the chr1 helps to see differences
+data_nuc %>%
+  filter(., grepl("chrX|chr1",CHR)) %>%
+  ggplot(aes(NUM, PROPORTION_COVERAGE/(median(PROPORTION_COVERAGE)), group = ID, col = CHR)) +
+  geom_point(size=0.2) +
+  labs( x = "Genome position" , y = "Relative coverage per 100kb window") +
+  theme_bw() + theme(strip.text.x = element_text(size = 6)) +
+  facet_wrap(~ID, scales = "free_y")
+
+ggsave("chrXtochr1_genomewide_coverage_allsamples.png", height=11.25, width=15)
+
+
+
+###### Wolbachia coverage
+
+# remove D. immitis and dog genome
+data_wb <- dplyr::filter(data, !grepl("scaffold|MtDNA|chrX|chr1|chr2|chr3|chr4|JAAUVH|CM025",CHR))
+
+# plot cov for each sample
+ggplot(data_wb, aes(NUM, PROPORTION_COVERAGE/(median(PROPORTION_COVERAGE)), group = ID, col = CHR)) +
+  geom_point(size=0.5) +
+  labs( x = "Genome position" , y = "Relative coverage per 100kb window") +
+  theme_bw() + theme(strip.text.x = element_text(size = 6)) +
+  facet_wrap(~ID, scales = "free_y")
+
+ggsave("wb_prop_median_coverage_allsamples.png", height=11.25, width=15)
+
+# plot cov for proportionsnwithout relation to the median
+ggplot(data_wb, aes(NUM, PROPORTION_COVERAGE), group = ID, col = CHR) +
+  geom_point(size=0.5) +
+  labs( x = "Genome position" , y = "Relative coverage per 100kb window") +
+  theme_bw() + theme(strip.text.x = element_text(size = 6)) +
+  facet_wrap(~ID, scales = "free_y")
+
+ggsave("wb_prop_coverage_allsamples.png", height=11.25, width=15)
+
+
+###### mtDNA
+
+# remove D. immitis and dog genome
+data_mtDNA <- dplyr::filter(data, !grepl("scaffold|Wb|chrX|chr1|chr2|chr3|chr4|JAAUVH|CM025",CHR))
+
+# plot cov for each sample
+ggplot(data_mtDNA, aes(NUM, PROPORTION_COVERAGE/(median(PROPORTION_COVERAGE)), group = ID, col = CHR)) +
+  geom_point(size=0.5) +
+  labs( x = "Genome position" , y = "Relative coverage per 100kb window") +
+  theme_bw() + theme(strip.text.x = element_text(size = 6)) +
+  facet_wrap(~ID, scales = "free_y")
+
+ggsave("mtDNA_prop_median_coverage_allsamples.png", height=11.25, width=15)
+
+# plot cov for proportionsnwithout relation to the median
+ggplot(data_mtDNA, aes(NUM, PROPORTION_COVERAGE), group = ID, col = CHR) +
+  geom_point(size=0.5) +
+  labs( x = "Genome position" , y = "Relative coverage per 100kb window") +
+  theme_bw() + theme(strip.text.x = element_text(size = 6)) +
+  facet_wrap(~ID, scales = "free_y")
+
+ggsave("mtDNA_prop_coverage_allsamples.png", height=11.25, width=15)
+## the window sizes are just too large to plot the mitochondrial and Wolbachia coverage. 
+```
