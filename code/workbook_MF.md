@@ -1569,35 +1569,35 @@ library(ggpubr)
 library(ggsci)
 library(stringr)
 
-setwd("C:/Users/rpow2134/OneDrive - The University of Sydney (Staff)/Documents/HW_WGS/HW_WGS_1/Artemis/coverage")
+setwd("C:/Users/rpow2134/OneDrive - The University of Sydney (Staff)/Documents/HW_WGS/HW_WGS_1/Artemis/dog2/coverage")
 
 #first, I have to read the nuclear cov stat and estimate the mean and sd
 #then, to add it to 'mito_wolb_cov.stats
 
-nuc_mito_wb_cov <- read.table('mito_wolb_cov.stats', header = F) %>% as_tibble()
+di_dog2_cov <- read.table('di_dog2_cov.stats', header = F) %>% as_tibble()
 
-colnames(nuc_mito_wb_cov) <- c('ID', 'nuc_cov', 'sd_nuc_cov', 'mito_cov', 'wb_cov')
+colnames(di_dog2_cov) <- c('ID', 'di_nuc_cov', 'di_sd_nuc_cov', 'di_mtDNA_cov', 'di_Wb_cov', 'dog_nuc_cov', 'dog_sd_nuc_cov', 'dog_mtDNA_cov')
 
-write_csv(nuc_mito_wb_cov, 'nuc_mit_wb_cov.csv')
+write_csv(di_dog2_cov, 'di_dog2_cov.csv')
 
 # nuclear, mitochondrial and Wb DNA coverage ratio
 
-n_m <- ggplot(nuc_mito_wb_cov, aes(x=ID, y=mito_cov/nuc_cov)) +
+n_m <- ggplot(di_dog2_cov, aes(x=ID, y=di_mtDNA_cov/di_nuc_cov)) +
   geom_point() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  labs(title = "Nuc. to mito. genome coverage ratio", y = "Coverage Ratio")
+  labs(title = "D. immitis Nuc. to mito. genome coverage ratio", y = "Coverage Ratio")
 n_m
 
-n_wb <- ggplot(nuc_mito_wb_cov, aes(x=ID, y=wb_cov/nuc_cov)) +
+n_wb <- ggplot(di_dog2_cov, aes(x=ID, y=di_Wb_cov/di_nuc_cov)) +
   geom_point() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  labs(title = "Nuc. to Wolb. genome coverage ratio", y = "Coverage Ratio")
+  labs(title = "D. immitis Nuc. to Wolb. genome coverage ratio", y = "Coverage Ratio")
 n_wb
 
-m_wb <- ggplot(nuc_mito_wb_cov, aes(x=ID, y=mito_cov/wb_cov)) +
+m_wb <- ggplot(di_dog2_cov, aes(x=ID, y=di_mtDNA_cov/di_Wb_cov)) +
   geom_point() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  labs(title = "Mito. to Wolb. genome coverage ratio", y = "Coverage Ratio")
+  labs(title = "D. immitis Mito. to Wolb. genome coverage ratio", y = "Coverage Ratio")
 m_wb
 
 ggarrange(n_m, n_wb, m_wb, ncol = 3)
@@ -1605,10 +1605,10 @@ ggsave("cov_ratios.png", height=6, width=20)
 
 
 # list file names
-file_names.window <- list.files(path = "C:/Users/rpow2134/OneDrive - The University of Sydney (Staff)/Documents/HW_WGS/HW_WGS_1/Artemis/coverage",pattern = ".sorted.100000_window.cov")
+file_names.window <- list.files(path = "C:/Users/rpow2134/OneDrive - The University of Sydney (Staff)/Documents/HW_WGS/HW_WGS_1/Artemis/dog2/coverage",pattern = ".sorted.100000_window.cov")
 
 # load data using file names, and make a formatted data frame
-setwd("C:/Users/rpow2134/OneDrive - The University of Sydney (Staff)/Documents/HW_WGS/HW_WGS_1/Artemis/coverage")
+setwd("C:/Users/rpow2134/OneDrive - The University of Sydney (Staff)/Documents/HW_WGS/HW_WGS_1/Artemis/dog2/coverage")
 
 data <- purrr::map_df(file_names.window, function(x) {
   data <- read.delim(x, header = F, sep="\t")
@@ -1623,44 +1623,49 @@ colnames(data) <- c("ID", "NUM", "CHR", "START", "END",
 
 # D. immitis coverage
 
-# remove scaffolds, mitochondrial and wolbachia genome
-data_nuc <- dplyr::filter(data, !grepl("scaffold|MtDNA|Wb|JAAUVH|CM025",CHR))
-# Also remove chromosomes called JAAUVH010000344 and CM025130.1 etc. - they are part of the dog genome. Removing them here is totally fine.
+# remove scaffolds, mitochondrial, wolbachia and dog genome
+data_di_nuc <- dplyr::filter(data, !grepl("scaffold|MtDNA|Wb|CM|AAEX",CHR))
 
 # data$SEX <- str_detect(data$SCAF,"Trichuris_trichiura_1_")
 
 
 # plot the general cov for each sample
-ggplot(data_nuc, aes(NUM, PROPORTION_COVERAGE/(median(PROPORTION_COVERAGE)), group = ID, col = CHR)) +
+ggplot(data_di_nuc, aes(NUM, PROPORTION_COVERAGE/(median(PROPORTION_COVERAGE)), group = ID, col = CHR)) +
   geom_point(size=0.5) +
   labs( x = "Genome position" , y = "Relative coverage per 100kb window") +
   theme_bw() + theme(strip.text.x = element_text(size = 6)) +
   facet_wrap(~ID, scales = "free_y")
 
-ggsave("ALL_genomewide_prop_median_coverage_allsamples.png", height=11.25, width=15)
+ggsave("ALL_di_genomewide_prop_median_coverage_allsamples.png", height=11.25, width=15)
 
 
 # this shows the proportion of coverage relative to the median coverage of all samples. Let's also just look at the proportion coverage by itself (not in relation to anything else).
-ggplot(data_nuc, aes(NUM, PROPORTION_COVERAGE, group = ID, col = CHR)) +
+ggplot(data_di_nuc, aes(NUM, PROPORTION_COVERAGE, group = ID, col = CHR)) +
   geom_point(size=0.5) +
-  labs( x = "Genome position" , y = "Raw coverage per 100kb window") +
+  labs( x = "Genome position" , y = "Proportion coverage per 100kb window") +
   theme_bw() + theme(strip.text.x = element_text(size = 6)) +
   facet_wrap(~ID, scales = "free_y")
 
 
 # include line for the mean
-mean_coverage_per_sample <- aggregate(PROPORTION_COVERAGE ~ ID, data = data_nuc, FUN = mean)
+di_nuc_mean <- aggregate(PROPORTION_COVERAGE ~ ID, data = data_di_nuc, FUN = mean)
 
-data_nuc <- merge(data_nuc, mean_coverage_per_sample, by = "ID", suffixes = c("", "_mean"))
+data_di_nuc <- merge(data_di_nuc, di_nuc_mean, by = "ID", suffixes = c("", "_mean"))
 
-ggplot(data_nuc, aes(NUM, PROPORTION_COVERAGE, group = ID, col = CHR)) +
+ggplot(data_di_nuc, aes(NUM, PROPORTION_COVERAGE, group = ID, col = CHR)) +
   geom_point(size=0.5) +
   geom_hline(aes(yintercept = PROPORTION_COVERAGE_mean), linetype = "dashed", color = "black") +
-  labs( x = "Genome position" , y = "Raw coverage per 100kb window") +
-  theme_bw() + theme(strip.text.x = element_text(size = 6)) +
+  labs( x = "Genome position" , y = "Coverage proportions per 100kb window") +
+  theme_bw() + 
+  theme(strip.text.x = element_text(size = 20),
+        axis.title.x = element_text(size = 15),
+        axis.title.y = element_text(size = 15),
+        axis.text = element_text(size = 10),
+        legend.text = element_text(size = 15)) +
+  guides(col = guide_legend(override.aes = list(size = 5))) +
   facet_wrap(~ID, scales = "free_y")
 
-ggsave("ALL_genomewide_prop_coverage_allsamples.png", height=11.25, width=15)
+ggsave("ALL_di_genomewide_prop_coverage_allsamples.png", height=11.25, width=15)
 
 
 
@@ -1668,7 +1673,7 @@ ggsave("ALL_genomewide_prop_coverage_allsamples.png", height=11.25, width=15)
 
 # Let's see only the chrX to explore the sex of the sample
 #Plotting with the chr1 helps to see differences
-data_nuc %>%
+data_di_nuc %>%
   filter(., grepl("chrX|chr1",CHR)) %>%
   ggplot(aes(NUM, PROPORTION_COVERAGE/(median(PROPORTION_COVERAGE)), group = ID, col = CHR)) +
   geom_point(size=0.2) +
@@ -1676,55 +1681,108 @@ data_nuc %>%
   theme_bw() + theme(strip.text.x = element_text(size = 6)) +
   facet_wrap(~ID, scales = "free_y")
 
-ggsave("chrXtochr1_genomewide_coverage_allsamples.png", height=11.25, width=15)
+ggsave("chrXtochr1_di_genomewide_coverage_allsamples.png", height=11.25, width=15)
 
 
 
 ###### Wolbachia coverage
 
 # remove D. immitis and dog genome
-data_wb <- dplyr::filter(data, !grepl("scaffold|MtDNA|chrX|chr1|chr2|chr3|chr4|JAAUVH|CM025",CHR))
+data_di_wb <- dplyr::filter(data, grepl("Wb",CHR))
 
 # plot cov for each sample
-ggplot(data_wb, aes(NUM, PROPORTION_COVERAGE/(median(PROPORTION_COVERAGE)), group = ID, col = CHR)) +
+ggplot(data_di_wb, aes(NUM, PROPORTION_COVERAGE/(median(PROPORTION_COVERAGE)), group = ID, col = CHR)) +
   geom_point(size=0.5) +
   labs( x = "Genome position" , y = "Relative coverage per 100kb window") +
   theme_bw() + theme(strip.text.x = element_text(size = 6)) +
   facet_wrap(~ID, scales = "free_y")
 
-ggsave("wb_prop_median_coverage_allsamples.png", height=11.25, width=15)
+ggsave("di_wb_prop_median_coverage_allsamples.png", height=11.25, width=15)
 
-# plot cov for proportionsnwithout relation to the median
-ggplot(data_wb, aes(NUM, PROPORTION_COVERAGE), group = ID, col = CHR) +
+# plot cov for proportions without relation to the median
+ggplot(data_di_wb, aes(NUM, PROPORTION_COVERAGE), group = ID, col = CHR) +
   geom_point(size=0.5) +
   labs( x = "Genome position" , y = "Relative coverage per 100kb window") +
   theme_bw() + theme(strip.text.x = element_text(size = 6)) +
   facet_wrap(~ID, scales = "free_y")
 
-ggsave("wb_prop_coverage_allsamples.png", height=11.25, width=15)
+ggsave("di_wb_prop_coverage_allsamples.png", height=11.25, width=15)
 
 
-###### mtDNA
+###### D. immitis mtDNA
 
 # remove D. immitis and dog genome
-data_mtDNA <- dplyr::filter(data, !grepl("scaffold|Wb|chrX|chr1|chr2|chr3|chr4|JAAUVH|CM025",CHR))
+data_di_mtDNA <- dplyr::filter(data, grepl("MtDNA",CHR))
 
 # plot cov for each sample
-ggplot(data_mtDNA, aes(NUM, PROPORTION_COVERAGE/(median(PROPORTION_COVERAGE)), group = ID, col = CHR)) +
+ggplot(data_di_mtDNA, aes(NUM, PROPORTION_COVERAGE/(median(PROPORTION_COVERAGE)), group = ID, col = CHR)) +
   geom_point(size=0.5) +
   labs( x = "Genome position" , y = "Relative coverage per 100kb window") +
   theme_bw() + theme(strip.text.x = element_text(size = 6)) +
   facet_wrap(~ID, scales = "free_y")
 
-ggsave("mtDNA_prop_median_coverage_allsamples.png", height=11.25, width=15)
+ggsave("di_mtDNA_prop_median_coverage_allsamples.png", height=11.25, width=15)
 
 # plot cov for proportionsnwithout relation to the median
-ggplot(data_mtDNA, aes(NUM, PROPORTION_COVERAGE), group = ID, col = CHR) +
+ggplot(data_di_mtDNA, aes(NUM, PROPORTION_COVERAGE), group = ID, col = CHR) +
   geom_point(size=0.5) +
   labs( x = "Genome position" , y = "Relative coverage per 100kb window") +
   theme_bw() + theme(strip.text.x = element_text(size = 6)) +
   facet_wrap(~ID, scales = "free_y")
 
-ggsave("mtDNA_prop_coverage_allsamples.png", height=11.25, width=15)
+ggsave("di_mtDNA_prop_coverage_allsamples.png", height=11.25, width=15)
 ## the window sizes are just too large to plot the mitochondrial and Wolbachia coverage. 
+
+
+
+
+
+#################################################################################################################
+# Make a bar plot showing D. immitis coverage (nuclear, mtDNA and Wolbachia) and dog coverage (nuclear and mtDNA)
+#################################################################################################################
+
+
+di_dog2_cov_long <- pivot_longer(di_dog2_cov, -ID, names_to = "Variable", values_to = "Value")
+
+
+filtered <- di_dog2_cov_long %>%
+  filter(Variable %in% c("di_nuc_cov", "di_mtDNA_cov", "di_Wb_cov", "dog_nuc_cov", "dog_mtDNA_cov")) %>%
+  complete(ID, Variable, fill = list(Value = NA))
+
+
+# Plot
+ggplot(filtered, aes(x = factor(Variable, levels = c("di_nuc_cov", "di_mtDNA_cov", "di_Wb_cov", "dog_nuc_cov", "dog_mtDNA_cov")), y = Value, fill = Variable)) +
+  geom_col(position = "dodge") +
+  labs(title = expression(paste("Sequencing coverage for ", italic("Dirofilaria immitis"), " and dog genomes")),
+       x = "Genomes",
+       y = "Coverage") +
+  scale_x_discrete(labels = c("di_nuc_cov" = "Nuc",
+                              "di_mtDNA_cov" = "Mt",
+                              "di_Wb_cov" = "Wb",
+                              "dog_nuc_cov" = "Nuc",
+                              "dog_mtDNA_cov" = "Mt")) +
+  scale_fill_discrete(labels = c("di_nuc_cov" = "Nuc",
+                        "di_mtDNA_cov" = "Mt",
+                        "di_Wb_cov" = "Wb",
+                        "dog_nuc_cov" = "Nuc",
+                        "dog_mtDNA_cov" = "Mt")) +
+  scale_fill_manual(values = c("di_nuc_cov" = "skyblue4",
+                    "di_mtDNA_cov" = "skyblue3",
+                    "di_Wb_cov" = "skyblue1",
+                    "dog_nuc_cov" = "tomato4",
+                    "dog_mtDNA_cov" = "tomato2")) +
+  theme_bw() +
+  theme(strip.text.x=element_text(size = 25, face = "bold"),
+        axis.text.x = element_text(angle = 90, hjust = 1, size = 25),
+        axis.text.y = element_text(size = 25),
+        axis.title.x = element_text(size = 35),
+        axis.title.y = element_text(size = 35),
+        title = element_text(size = 30)
+        ) +
+  facet_wrap(~ID, scales = "free_y") +
+  coord_cartesian(ylim = c(0, 6)) +
+  guides(fill = "none")
+
+ggsave("coverage_summary.png", height=20, width=15)
+
 ```
